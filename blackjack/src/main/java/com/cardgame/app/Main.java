@@ -51,8 +51,35 @@ public class Main {
                     }
                 }
                 case 2 -> {
-                    System.out.println("바카라는 베팅 연동을 곧 추가할 예정입니다.");
-                    // Baccarat 베팅 버전 만들면 여기서 동일 패턴으로 반복문 구성
+                    var game = new com.cardgame.baccarat.Baccarat();
+                    while (true) {
+                        System.out.println("\n[바카라] 잔액: " + wallet.balance());
+                        if (wallet.balance() <= 0) {
+                            System.out.println("잔액이 0원입니다. 메뉴로 돌아갑니다.");
+                            continue outer;
+                        }
+                        // 베팅 타깃 선택
+                        System.out.println("베팅 타깃: 1) PLAYER  2) BANKER  3) TIE  (0: 메뉴로)");
+                        int t = askInt(sc, "> ", 0, 3);
+                        if (t == 0) continue outer;
+                        var target = switch (t) {
+                            case 1 -> com.cardgame.baccarat.Baccarat.Bet.PLAYER;
+                            case 2 -> com.cardgame.baccarat.Baccarat.Bet.BANKER;
+                            case 3 -> com.cardgame.baccarat.Baccarat.Bet.TIE;
+                            default -> com.cardgame.baccarat.Baccarat.Bet.PLAYER;
+                        };
+
+                        int bet = askInt(sc, "베팅 금액(0: 메뉴로) > ", 0, wallet.balance());
+                        if (bet == 0) continue outer;
+
+                        int delta = game.playOneRoundForBet(sc, shoe, bet, target);
+                        wallet.applyDelta(delta);
+                        System.out.println("라운드 종료. 현재 잔액: " + wallet.balance());
+
+                        int cont = askInt(sc, "계속(1) / 메뉴로(0) > ", 0, 1);
+                        if (cont == 0) continue outer;
+                    }
+
                 }
                 case 3 -> {
                     System.out.println("인디언포커는 베팅 연동을 곧 추가할 예정입니다.");
