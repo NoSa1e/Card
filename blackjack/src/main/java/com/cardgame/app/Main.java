@@ -1,9 +1,10 @@
+// com/cardgame/app/Main.java
 package com.cardgame.app;
 
+import com.cardgame.card.*;
 import com.cardgame.blackjack.BlackJack;
-import com.cardgame.card.Deck;
-import com.cardgame.card.Game;
-import com.cardgame.card.Shoe;
+// import com.cardgame.baccarat.Baccarat;
+// import com.cardgame.indianpoker.IndianPoker;
 
 import java.util.Scanner;
 
@@ -12,29 +13,52 @@ public class Main {
         var sc = new Scanner(System.in);
 
         int decks = askInt(sc, "덱 수 입력 (예: 2 또는 3) > ", 1, 8);
-        Deck shoe = new Shoe(decks);
+        Deck shoe = new Shoe(decks); // 필요하면 new Shoe(decks, 0.75)로 침투율 적용
 
+        int initial = askInt(sc, "초기 자금(예: 1000) > ", 1, 1_000_000);
+        Wallet wallet = new Wallet(initial);
+
+        outer:
         while (true) {
             System.out.println("\n== 게임 선택 ==");
             System.out.println("1) 블랙잭");
-            System.out.println("2) 바카라");
-            System.out.println("3) 인디언포커");
+            System.out.println("2) 바카라 (추가 예정)");
+            System.out.println("3) 인디언포커 (추가 예정)");
             System.out.println("0) 종료");
             int sel = askInt(sc, "> ", 0, 3);
+            if (sel == 0) { System.out.println("종료합니다."); return; }
 
-            if (sel == 0) {
-                System.out.println("종료합니다.");
-                return;
+            switch (sel) {
+                case 1 -> {
+                    var game = new BlackJack();
+                    while (true) {
+                        System.out.println("\n[블랙잭] 잔액: " + wallet.balance());
+                        if (wallet.balance() <= 0) {
+                            System.out.println("잔액이 0원입니다. 메뉴로 돌아갑니다.");
+                            continue outer;
+                        }
+                        int bet = askInt(sc, "베팅 금액(0: 메뉴로) > ", 0, wallet.balance());
+                        if (bet == 0) continue outer;
+
+                        // 베팅 포함 라운드 실행
+                        int delta = game.playOneRoundForBet(sc, shoe, bet);
+                        wallet.applyDelta(delta);
+                        System.out.println("라운드 종료. 현재 잔액: " + wallet.balance());
+
+                        // 계속 여부
+                        int cont = askInt(sc, "계속(1) / 메뉴로(0) > ", 0, 1);
+                        if (cont == 0) continue outer;
+                    }
+                }
+                case 2 -> {
+                    System.out.println("바카라는 베팅 연동을 곧 추가할 예정입니다.");
+                    // Baccarat 베팅 버전 만들면 여기서 동일 패턴으로 반복문 구성
+                }
+                case 3 -> {
+                    System.out.println("인디언포커는 베팅 연동을 곧 추가할 예정입니다.");
+                }
+                default -> {}
             }
-
-            Game game = switch (sel) {
-                case 1 -> new BlackJack();     // 네가 이미 만든 룰 클래스
-//                case 2 -> new Baccarat();
-//                case 3 -> new IndianPoker();
-                default -> null;
-            };
-
-            if (game != null) game.playOneRound(sc, shoe);
         }
     }
 
