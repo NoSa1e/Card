@@ -34,6 +34,14 @@ public final class CardStrings {
         }
         return sb.append("]").toString();
     }
+
+    public static String show(Card c) {
+        return card(c, true);   // 컬러 출력 기본
+    }
+    // 필요하면 컬러 off 버전도
+    public static String showMono(Card c) {
+        return card(c, false);
+    }
 }
 
 
