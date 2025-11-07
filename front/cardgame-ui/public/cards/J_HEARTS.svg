@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="228" height="312" viewBox="0 0 228 312" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="228" height="312" rx="20" fill="#ffffff"/>
+  <rect x="10" y="10" width="208" height="292" rx="16" fill="#fcf2f4" stroke="#ffe5ea" stroke-width="4"/>
+  <g fill="#d22f46" font-family="'Pretendard','Inter','Noto Sans','Noto Sans KR',system-ui,sans-serif">
+    <text x="28" y="58" font-size="48" font-weight="700">J</text>
+    <text x="28" y="104" font-size="40" font-weight="600">♥</text>
+  </g>
+  <g fill="#d22f46" font-family="'Pretendard','Inter','Noto Sans','Noto Sans KR',system-ui,sans-serif" transform="rotate(180 114 156)">
+    <text x="28" y="58" font-size="48" font-weight="700">J</text>
+    <text x="28" y="104" font-size="40" font-weight="600">♥</text>
+  </g>
+  <text x="114" y="176" text-anchor="middle" font-size="132" font-weight="600" fill="#d22f46" font-family="'Pretendard','Inter','Noto Sans','Noto Sans KR',system-ui,sans-serif">♥</text>
+</svg>

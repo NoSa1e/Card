@@ -2,29 +2,75 @@
   <div class="card3d" :class="{ flip: flipped && !isHidden }" :style="{ '--delay': `${delay}ms` }">
     <div class="face back"></div>
     <div class="face front">
-      <img v-if="!isHidden" :src="src" :alt="alt" @error="fallback">
+      <img v-if="!isHidden" :src="src" :alt="alt" @error="onError" />
     </div>
   </div>
 </template>
 <script setup>
 import { computed, ref, watchEffect } from 'vue'
-const props = defineProps({ rank:String, suit:String, delay:{type:Number,default:0}, flipped:{type:Boolean,default:true}, size:{type:Number,default:1} })
+import { assetUrl } from '../utils/assets'
+
+const props = defineProps({ rank:String, suit:String, delay:{type:Number,default:0}, flipped:{type:Boolean,default:true}, size:{ type:Number,default:1} })
 const isHidden = computed(()=> ['BACK','HIDDEN'].includes((props.rank||'').toUpperCase()))
 const rankMap = { ACE:'A', TWO:'2', THREE:'3', FOUR:'4', FIVE:'5', SIX:'6', SEVEN:'7', EIGHT:'8', NINE:'9', TEN:'10', JACK:'J', QUEEN:'Q', KING:'K' }
 const suitMap = { HEARTS:'H', DIAMONDS:'D', CLUBS:'C', SPADES:'S', H:'H', D:'D', C:'C', S:'S' }
+
 const code = computed(() => {
   const r=(props.rank||''), s=(props.suit||'')
   const rr=(rankMap[r.toUpperCase()]||r).replace(/^T$/,'10')
   const ss=(suitMap[s.toUpperCase()]||s).toUpperCase()
   return `${rr}_${ss}`
 })
-const src = ref(`/cards/${code.value}.png`)
+
 const alt = computed(() => `${props.rank} of ${props.suit}`)
-watchEffect(()=> { src.value = `/cards/${code.value}.png` })
-function fallback(){
-  const c=code.value
-  const tries=[ `${c}.png`, `${c}.PNG`, `${c.replace('_','')}.png`, `${c.replace('_','')}.PNG`, `${c.replace('_','-')}.png`, `${c.replace('_','-')}.PNG` ]
-  if(tries.length){ src.value = `/cards/${tries.shift()}` }
+const attempts = ref([])
+const src = ref(assetUrl('/cards/BACK.svg'))
+
+function buildAttempts(){
+  const base = code.value
+  if(!base){
+    return ['BACK.svg', 'BACK.png']
+  }
+  const variants = new Set([
+    `${base}.svg`,
+    `${base}.png`,
+    `${base}.webp`,
+    `${base.toUpperCase()}.svg`,
+    `${base.toUpperCase()}.png`
+  ])
+  const compact = base.replace('_','')
+  const dashed = base.replace('_','-')
+  const suitNames = { H:'HEARTS', D:'DIAMONDS', C:'CLUBS', S:'SPADES' }
+  const [rankPart, suitPart] = base.split('_')
+  if(suitPart){
+    const longSuit = suitNames[suitPart] || suitPart
+    variants.add(`${rankPart}_${longSuit}.svg`)
+    variants.add(`${rankPart}_${longSuit}.png`)
+  }
+  variants.add(`${compact}.svg`)
+  variants.add(`${compact}.png`)
+  variants.add(`${dashed}.svg`)
+  variants.add(`${dashed}.png`)
+  return [...variants, 'BACK.svg', 'BACK.png']
+}
+
+function nextSrc(){
+  const attempt = attempts.value.shift()
+  return attempt ? assetUrl(`/cards/${attempt}`) : assetUrl('/cards/BACK.svg')
+}
+
+watchEffect(() => {
+  attempts.value = buildAttempts()
+  const next = attempts.value.shift()
+  src.value = next ? assetUrl(`/cards/${next}`) : assetUrl('/cards/BACK.svg')
+})
+
+function onError(){
+  if(!attempts.value.length){
+    src.value = assetUrl('/cards/BACK.svg')
+    return
+  }
+  src.value = nextSrc()
 }
 </script>
 <style scoped>
