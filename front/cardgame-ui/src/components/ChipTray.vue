@@ -27,7 +27,6 @@
 </template>
 <script setup>
 import { computed, watch } from 'vue'
-import { assetUrl } from '../utils/assets'
 
 const props = defineProps({
   modelValue: { type: Number, default: 0 },
@@ -90,7 +89,7 @@ function reset(){
 function chipSrc(amount){
   const known = [100, 500, 1000, 5000]
   const value = known.includes(amount) ? amount : known.reduce((prev, curr) => Math.abs(curr - amount) < Math.abs(prev - amount) ? curr : prev)
-  return assetUrl(`/assets/chip_${value}.png`)
+  return `/assets/chip_${value}.png`
 }
 
 function isAtLimit(delta){

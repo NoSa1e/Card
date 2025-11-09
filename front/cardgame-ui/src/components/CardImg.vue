@@ -8,7 +8,6 @@
 </template>
 <script setup>
 import { computed, ref, watchEffect } from 'vue'
-import { assetUrl } from '../utils/assets'
 
 const props = defineProps({ rank:String, suit:String, delay:{type:Number,default:0}, flipped:{type:Boolean,default:true}, size:{ type:Number,default:1} })
 const isHidden = computed(()=> ['BACK','HIDDEN'].includes((props.rank||'').toUpperCase()))
@@ -24,7 +23,7 @@ const code = computed(() => {
 
 const alt = computed(() => `${props.rank} of ${props.suit}`)
 const attempts = ref([])
-const src = ref(assetUrl('/cards/BACK.svg'))
+const src = ref('')
 
 function buildAttempts(){
   const base = code.value
@@ -56,18 +55,18 @@ function buildAttempts(){
 
 function nextSrc(){
   const attempt = attempts.value.shift()
-  return attempt ? assetUrl(`/cards/${attempt}`) : assetUrl('/cards/BACK.svg')
+  return attempt ? `/cards/${attempt}` : '/cards/BACK.svg'
 }
 
 watchEffect(() => {
   attempts.value = buildAttempts()
   const next = attempts.value.shift()
-  src.value = next ? assetUrl(`/cards/${next}`) : assetUrl('/cards/BACK.svg')
+  src.value = next ? `/cards/${next}` : '/cards/BACK.svg'
 })
 
 function onError(){
   if(!attempts.value.length){
-    src.value = assetUrl('/cards/BACK.svg')
+    src.value = '/cards/BACK.svg'
     return
   }
   src.value = nextSrc()
