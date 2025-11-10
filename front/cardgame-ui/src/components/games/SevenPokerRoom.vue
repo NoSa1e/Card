@@ -41,9 +41,19 @@
         />
       </div>
       <div class="actions">
-        <button @click="nextStage" :disabled="loading || (!isHost && mode==='multi')">다음 단계</button>
         <button @click="refresh" :disabled="loading">상태 새로고침</button>
       </div>
+    </section>
+
+    <section v-if="inProgress && pendingOrder.length" class="pending">
+      <p>행동 대기: {{ pendingOrder.join(', ') }}</p>
+    </section>
+
+    <section v-if="winners.length" class="showdown">
+      <p>
+        쇼다운 결과: <strong>{{ winners.join(', ') }}</strong>
+        <span v-if="settledPot">(팟 {{ formatChips(settledPot) }})</span>
+      </p>
     </section>
 
     <section class="players">
@@ -78,7 +88,7 @@
         <div v-if="side.user === user" class="player-chips">
           <ChipTray
             v-model="betAmount"
-            :min="10"
+            :min="betMinimum"
             :denominations="[10, 50, 100, 500, 1000]"
             :disabled="loading"
           />
@@ -140,8 +150,14 @@ watch(ante, (value) => {
 })
 
 watch(betAmount, (value) => {
-  if(value < 10){
-    betAmount.value = 10
+  if(value < betMinimum.value){
+    betAmount.value = betMinimum.value
+  }
+})
+
+watch(minRaise, (value) => {
+  if(betAmount.value < value){
+    betAmount.value = value
   }
 })
 
@@ -194,9 +210,9 @@ async function refresh(){
 }
 
 async function bet(target){ await action('/api/seven/bet', { user: target, amount: betAmountValue.value }) }
+async function call(target){ await action('/api/seven/call', { user: target }) }
 async function check(target){ await action('/api/seven/check', { user: target }) }
 async function fold(target){ await action('/api/seven/fold', { user: target }) }
-async function nextStage(){ await action('/api/seven/next') }
 
 async function action(path, extra={}){
   if(!roomId.value) return

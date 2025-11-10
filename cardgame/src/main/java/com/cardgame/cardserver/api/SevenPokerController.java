@@ -1,9 +1,18 @@
 package com.cardgame.cardserver.api;
-import com.cardgame.cardserver.core.*; import com.cardgame.cardserver.util.ApiResponse;
-import org.springframework.web.bind.annotation.*; import java.util.*;
-@RestController @RequestMapping("/api/seven")
+
+import com.cardgame.cardserver.core.Card;
+import com.cardgame.cardserver.core.SevenPokerGame;
+import com.cardgame.cardserver.util.ApiResponse;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@RestController
+@RequestMapping("/api/seven")
 public class SevenPokerController {
-    private final Map<String,SevenPokerGame.State> rooms = new HashMap<>();
+
+    private final Map<String, SevenPokerGame.State> rooms = new HashMap<>();
     private final SevenPokerGame game = new SevenPokerGame();
     private SevenPokerGame.State st(String roomId){ return rooms.computeIfAbsent(roomId, k-> new SevenPokerGame.State()); }
     private static Map<String,Object> dto(Card c){ return Map.of("rank", c.rankStr(), "suit", c.suitStr()); }
@@ -29,6 +38,7 @@ public class SevenPokerController {
         }
         return out;
     }
+
     @PostMapping("/start")
     public Object start(@RequestParam String roomId, @RequestParam String users, @RequestParam int ante){
         var list = Arrays.asList(users.split(","));
@@ -41,6 +51,7 @@ public class SevenPokerController {
                 "turn", s.turn
         ));
     }
+
     @GetMapping("/state")
     public Object state(@RequestParam String roomId, @RequestParam String viewer){
         var s = st(roomId);
@@ -54,16 +65,47 @@ public class SevenPokerController {
         d.put("players", maskFor(viewer, s.players));
         return ApiResponse.of("ok", true).detail(d);
     }
-    @PostMapping("/bet") public Object bet(@RequestParam String roomId, @RequestParam String user, @RequestParam int amount){
-        var s=st(roomId); game.bet(s,user,amount); return ApiResponse.of("ok", true).detail(Map.of("pot", s.pot, "bets", s.bets));
+
+    @PostMapping("/call")
+    public Object call(@RequestParam String roomId, @RequestParam String user) {
+        SevenPokerGame.State state = stateFor(roomId);
+        game.call(state, user);
+        return ApiResponse.of("ok", true).detail(Map.of(
+                "pot", state.pot,
+                "currentBet", state.currentBet,
+                "turn", state.turn
+        ));
     }
-    @PostMapping("/check") public Object check(@RequestParam String roomId, @RequestParam String user){
-        var s=st(roomId); game.check(s,user); return ApiResponse.of("ok", true);
+
+    @PostMapping("/check")
+    public Object check(@RequestParam String roomId, @RequestParam String user) {
+        SevenPokerGame.State state = stateFor(roomId);
+        game.check(state, user);
+        return ApiResponse.of("ok", true).detail(Map.of(
+                "turn", state.turn
+        ));
     }
-    @PostMapping("/fold") public Object fold(@RequestParam String roomId, @RequestParam String user){
-        var s=st(roomId); game.fold(s,user); return ApiResponse.of("ok", true).detail(Map.of("remain", s.players.keySet()));
+
+    @PostMapping("/fold")
+    public Object fold(@RequestParam String roomId, @RequestParam String user) {
+        SevenPokerGame.State state = stateFor(roomId);
+        game.fold(state, user);
+        return ApiResponse.of("ok", true).detail(Map.of(
+                "turn", state.turn,
+                "inProgress", state.inProgress,
+                "winners", new ArrayList<>(state.winners)
+        ));
     }
-    @PostMapping("/next") public Object next(@RequestParam String roomId){
-        var s=st(roomId); game.next(s); return ApiResponse.of("ok", true).detail(Map.of("stage", s.stage, "inProgress", s.inProgress));
+
+    @PostMapping("/next")
+    public Object next(@RequestParam String roomId) {
+        SevenPokerGame.State state = stateFor(roomId);
+        game.next(state);
+        return ApiResponse.of("ok", true).detail(Map.of(
+                "stage", state.stage,
+                "stageName", state.stageName,
+                "turn", state.turn,
+                "inProgress", state.inProgress
+        ));
     }
 }
