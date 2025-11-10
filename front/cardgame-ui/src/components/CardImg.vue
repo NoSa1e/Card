@@ -11,8 +11,14 @@ import { computed, ref, watchEffect } from 'vue'
 
 const props = defineProps({ rank:String, suit:String, delay:{type:Number,default:0}, flipped:{type:Boolean,default:true}, size:{ type:Number,default:1} })
 const isHidden = computed(()=> ['BACK','HIDDEN'].includes((props.rank||'').toUpperCase()))
-const rankMap = { ACE:'A', TWO:'2', THREE:'3', FOUR:'4', FIVE:'5', SIX:'6', SEVEN:'7', EIGHT:'8', NINE:'9', TEN:'10', JACK:'J', QUEEN:'Q', KING:'K' }
-const suitMap = { HEARTS:'H', DIAMONDS:'D', CLUBS:'C', SPADES:'S', H:'H', D:'D', C:'C', S:'S' }
+const rankMap = {
+  ACE:'A', TWO:'2', THREE:'3', FOUR:'4', FIVE:'5', SIX:'6', SEVEN:'7', EIGHT:'8', NINE:'9', TEN:'10', JACK:'J', QUEEN:'Q', KING:'K',
+  ONE:'A', I:'A'
+}
+const suitMap = {
+  HEARTS:'H', HEART:'H', DIAMONDS:'D', DIAMOND:'D', CLUBS:'C', CLUB:'C', CLOVER:'C', SPADES:'S', SPADE:'S',
+  H:'H', D:'D', C:'C', S:'S'
+}
 
 const code = computed(() => {
   const r=(props.rank||''), s=(props.suit||'')
@@ -40,11 +46,50 @@ function buildAttempts(){
   const compact = base.replace('_','')
   const dashed = base.replace('_','-')
   const suitNames = { H:'HEARTS', D:'DIAMONDS', C:'CLUBS', S:'SPADES' }
-  const [rankPart, suitPart] = base.split('_')
-  if(suitPart){
+  const attempts = []
+  const added = new Set()
+
+  function addVariant(name){
+    if(!name) return
+    const clean = name.replace(/\s+/g, '')
+    if(!clean) return
+    const forms = [clean, clean.toUpperCase(), clean.toLowerCase()]
+    for(const form of forms){
+      for(const ext of ['png', 'webp', 'svg']){
+        const filename = `${form}.${ext}`
+        if(!added.has(filename)){
+          added.add(filename)
+          attempts.push(filename)
+        }
+      }
+    }
+  }
+
+  if(base){
+    const [rankPart = '', rawSuitPart = ''] = base.split('_')
+    const suitPart = rawSuitPart || ''
     const longSuit = suitNames[suitPart] || suitPart
-    variants.add(`${rankPart}_${longSuit}.svg`)
-    variants.add(`${rankPart}_${longSuit}.png`)
+    const combos = new Set()
+
+    combos.add(`${rankPart}${suitPart ? `_${suitPart}` : ''}`.replace(/_+$/,''))
+    combos.add(base)
+
+    if(suitPart){
+      combos.add(`${rankPart}_${longSuit}`)
+      combos.add(`${rankPart}${suitPart}`)
+      combos.add(`${rankPart}${longSuit}`)
+      combos.add(`${rankPart}-${suitPart}`)
+      combos.add(`${rankPart}-${longSuit}`)
+    }
+
+    const compact = base.replace(/_/g, '')
+    const dashed = base.replace(/_/g, '-')
+    combos.add(compact)
+    combos.add(dashed)
+
+    for(const combo of combos){
+      addVariant(combo)
+    }
   }
   variants.add(`${compact}.svg`)
   variants.add(`${compact}.png`)
