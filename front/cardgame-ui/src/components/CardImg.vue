@@ -32,7 +32,19 @@ const attempts = ref([])
 const src = ref('')
 
 function buildAttempts(){
-  const base = (code.value || '').trim()
+  const base = code.value
+  if(!base){
+    return ['BACK.png', 'BACK.svg']
+  }
+  const variants = new Set([
+    `${base}.svg`,
+    `${base}.png`,
+    `${base}.webp`,
+    `${base.toUpperCase()}.svg`,
+    `${base.toUpperCase()}.png`
+  ])
+  const compact = base.replace('_','')
+  const dashed = base.replace('_','-')
   const suitNames = { H:'HEARTS', D:'DIAMONDS', C:'CLUBS', S:'SPADES' }
   const attempts = []
   const added = new Set()
@@ -79,9 +91,11 @@ function buildAttempts(){
       addVariant(combo)
     }
   }
-
-  addVariant('BACK')
-  return attempts
+  variants.add(`${compact}.svg`)
+  variants.add(`${compact}.png`)
+  variants.add(`${dashed}.svg`)
+  variants.add(`${dashed}.png`)
+  return [...variants, 'BACK.png', 'BACK.svg']
 }
 
 const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
