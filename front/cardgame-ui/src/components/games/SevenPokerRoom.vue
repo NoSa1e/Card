@@ -21,14 +21,6 @@
         <span class="label">현재 턴</span>
         <strong>{{ turnUser || '-' }}</strong>
       </div>
-      <div>
-        <span class="label">현재 베팅</span>
-        <strong>{{ formatChips(currentBet) }}</strong>
-      </div>
-      <div>
-        <span class="label">최소 레이즈</span>
-        <strong>{{ formatChips(minRaise) }}</strong>
-      </div>
     </section>
 
     <section class="controls">
@@ -68,7 +60,7 @@
       <article
         v-for="side in players"
         :key="side.user"
-        :class="['player', { me: side.user === user, acting: side.user === turnUser, folded: side.folded, winner: side.winner }]"
+        :class="['player', { me: side.user === user, acting: side.user === turnUser, folded: side.folded }]"
       >
         <header>
           <h4>{{ side.user }}</h4>
@@ -89,15 +81,9 @@
             <span>총 베팅</span>
             <strong>{{ formatChips(side.bet) }}</strong>
           </div>
-          <div class="bet-summary" v-if="Number(side.toCall) > 0">
-            <span>콜 필요</span>
-            <strong>{{ formatChips(side.toCall) }}</strong>
-          </div>
           <div class="action-status" :class="(side.action || '').toLowerCase()">
             {{ actionDisplay(side) }}
           </div>
-          <div v-if="side.handRank" class="hand-rank">족보: {{ handRankLabel(side.handRank) }}</div>
-          <div v-if="Number(side.payout)" class="hand-rank">획득: {{ formatChips(side.payout) }}</div>
         </div>
         <div v-if="side.user === user" class="player-chips">
           <ChipTray
@@ -108,9 +94,8 @@
           />
         </div>
         <div class="player-actions">
-          <button @click="bet(side.user)" :disabled="!canRaise(side)">{{ betButtonLabel(side) }}</button>
-          <button @click="call(side.user)" :disabled="!canCall(side)">{{ callLabel(side) }}</button>
-          <button @click="check(side.user)" :disabled="!canCheck(side)">체크</button>
+          <button @click="bet(side.user)" :disabled="!canAct(side)">베팅 +{{ betAmountDisplay }}</button>
+          <button @click="check(side.user)" :disabled="!canAct(side)">체크</button>
           <button @click="fold(side.user)" :disabled="!canAct(side)">폴드</button>
         </div>
         <div v-if="side.folded" class="fold-banner">폴드</div>
@@ -141,11 +126,6 @@ const pot = ref(0)
 const playersState = ref([])
 const inProgress = ref(false)
 const turn = ref(null)
-const currentBet = ref(0)
-const minRaise = ref(10)
-const pendingOrder = ref([])
-const winners = ref([])
-const settledPot = ref(0)
 
 const user = computed(() => props.user)
 const mode = computed(() => props.mode)
@@ -159,22 +139,9 @@ const isHost = computed(() => {
 })
 
 const players = computed(() => playersState.value)
-const betAmountDisplay = computed(() => Math.max(betMinimum.value, Math.round(betAmount.value || 0)).toLocaleString())
-const betAmountValue = computed(() => Math.max(betMinimum.value, Math.round(betAmount.value || 0)))
+const betAmountDisplay = computed(() => Math.max(10, Math.round(betAmount.value || 0)).toLocaleString())
+const betAmountValue = computed(() => Math.max(10, Math.round(betAmount.value || 0)))
 const turnUser = computed(() => turn.value)
-const betMinimum = computed(() => Math.max(minRaise.value || 10, 10))
-
-const callLabel = (side) => {
-  const amount = Number(side?.toCall || 0)
-  return amount > 0 ? `콜 ${formatChips(amount)}` : '콜'
-}
-
-const betButtonLabel = (side) => {
-  if (currentBet.value <= 0) {
-    return `베팅 ${betAmountDisplay.value}`
-  }
-  return `레이즈 +${betAmountDisplay.value}`
-}
 
 watch(ante, (value) => {
   if(value < 10){
@@ -234,11 +201,6 @@ async function refresh(){
     inProgress.value = Boolean(detail.inProgress)
     turn.value = detail.turn || null
     if(detail.ante){ ante.value = detail.ante }
-    currentBet.value = detail.currentBet || 0
-    minRaise.value = detail.minRaise || Math.max(10, ante.value)
-    pendingOrder.value = detail.pending || []
-    winners.value = detail.winners || []
-    settledPot.value = detail.settledPot || 0
     playersState.value = detail.players || []
   }catch(err){
     console.error(err)
@@ -282,27 +244,14 @@ function formatChips(value){
   return Math.max(0, Math.round(num)).toLocaleString()
 }
 
-function handRankLabel(rank){
-  if(!rank) return ''
-  return String(rank).replace(/_/g, ' ')
-}
-
 function actionDisplay(side){
   if(!side) return '대기 중'
   const type = side.action
   if(type === 'BET'){
     return `베팅 +${formatChips(side.actionAmount)}`
   }
-  if(type === 'RAISE'){
-    return `레이즈 +${formatChips(side.actionAmount)}`
-  }
-  if(type === 'CALL'){
-    return `콜 ${formatChips(side.actionAmount)}`
-  }
   if(type === 'CHECK') return '체크'
   if(type === 'FOLD') return '폴드'
-  if(type === 'WIN') return `승리 +${formatChips(side.actionAmount)}`
-  if(type === 'LOSE') return '패배'
   if(type === 'ANTE') return `앤티 ${formatChips(side.actionAmount)}`
   return '대기 중'
 }
@@ -314,21 +263,6 @@ function canAct(side){
   if(!inProgress.value) return false
   if(turn.value && turn.value !== side.user) return false
   return !loading.value
-}
-
-function canCall(side){
-  if(!canAct(side)) return false
-  return Number(side?.toCall || 0) > 0
-}
-
-function canCheck(side){
-  if(!canAct(side)) return false
-  return Number(side?.toCall || 0) <= 0
-}
-
-function canRaise(side){
-  if(!canAct(side)) return false
-  return betAmountValue.value >= betMinimum.value
 }
 </script>
 <style scoped>
@@ -352,7 +286,6 @@ function canRaise(side){
 .player.me{ border-color:#5d9cff; box-shadow:0 0 0 3px rgba(93,156,255,.28); }
 .player.acting{ border-color:rgba(255,214,120,.8); box-shadow:0 0 0 3px rgba(255,214,120,.25); }
 .player.folded{ opacity:.55; }
-.player.winner{ border-color:#6bdc8f; box-shadow:0 0 0 3px rgba(107,220,143,.3); }
 .player header{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .player .profile{ padding:4px 10px; border-radius:999px; background:rgba(255,255,255,.1); color:rgba(255,255,255,.75); font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
 .cards{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
@@ -364,15 +297,10 @@ function canRaise(side){
 .action-status.bet{ background:rgba(255,186,120,.18); color:#ffb87b; }
 .action-status.check{ background:rgba(120,200,255,.18); color:#7bcaff; }
 .action-status.fold{ background:rgba(255,136,152,.18); color:#ff91a3; }
-.hand-rank{ font-size:.82rem; color:rgba(255,255,255,.7); }
 .player-chips{ margin-top:auto; }
 .player-actions{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
 .player-actions button{ padding:10px 14px; border-radius:10px; border:none; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; flex:1 1 30%; min-width:110px; }
 .player-actions button:disabled{ opacity:.5; cursor:not-allowed; }
 .fold-banner{ position:absolute; right:16px; bottom:16px; padding:6px 12px; border-radius:999px; background:rgba(255,136,152,.2); color:#ff91a3; font-size:.8rem; font-weight:600; }
-.pending{ background:rgba(255,255,255,.05); border-radius:14px; padding:12px 18px; }
-.pending p{ margin:0; color:rgba(255,255,255,.75); font-size:.9rem; }
-.showdown{ background:rgba(255,255,255,.08); border-radius:14px; padding:16px 20px; }
-.showdown p{ margin:0; font-size:1rem; color:#ffd36b; }
 .empty{ color:rgba(255,255,255,.6); text-align:center; padding:40px 0; }
 </style>

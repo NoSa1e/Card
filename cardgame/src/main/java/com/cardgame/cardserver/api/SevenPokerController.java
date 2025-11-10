@@ -14,103 +14,56 @@ public class SevenPokerController {
 
     private final Map<String, SevenPokerGame.State> rooms = new HashMap<>();
     private final SevenPokerGame game = new SevenPokerGame();
-
-    private SevenPokerGame.State stateFor(String roomId) {
-        return rooms.computeIfAbsent(roomId, key -> new SevenPokerGame.State());
-    }
-
-    private static Map<String, Object> dto(Card card) {
-        return Map.of(
-                "rank", card.rankStr(),
-                "suit", card.suitStr()
-        );
-    }
-
-    private List<Map<String, Object>> maskFor(String viewer, SevenPokerGame.State state) {
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (Map.Entry<String, SevenPokerGame.Side> entry : state.players.entrySet()) {
-            String uid = entry.getKey();
-            SevenPokerGame.Side side = entry.getValue();
-            List<Map<String, Object>> visible = new ArrayList<>();
-            for (int i = 0; i < side.cards.size(); i++) {
-                boolean hide = !Objects.equals(viewer, uid) && (i < 2 || i == 6);
-                visible.add(hide ? Map.of("rank", "BACK", "suit", "") : dto(side.cards.get(i)));
+    private SevenPokerGame.State st(String roomId){ return rooms.computeIfAbsent(roomId, k-> new SevenPokerGame.State()); }
+    private static Map<String,Object> dto(Card c){ return Map.of("rank", c.rankStr(), "suit", c.suitStr()); }
+    private static List<Map<String,Object>> maskFor(String viewer, Map<String,SevenPokerGame.Side> players){
+        List<Map<String,Object>> out=new ArrayList<>();
+        for(var e: players.entrySet()){
+            String uid=e.getKey(); var side=e.getValue(); var cards=side.cards;
+            List<Map<String,Object>> show=new ArrayList<>();
+            for(int i=0;i<cards.size();i++){
+                if(!viewer.equals(uid) && (i<2 || i==6)) show.add(Map.of("rank","BACK","suit",""));
+                else show.add(dto(cards.get(i)));
             }
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("user", uid);
-            row.put("cards", visible);
-            row.put("bet", side.contributed);
-            row.put("action", side.lastAction);
-            row.put("actionAmount", side.lastAmount);
-            row.put("folded", side.folded);
-            row.put("ai", side.ai);
-            row.put("toCall", game.toCall(state, uid));
-            row.put("streetBet", state.streetContribution.getOrDefault(uid, 0));
-            row.put("winner", side.winner);
-            if (side.payout != null) {
-                row.put("payout", side.payout);
-            }
-            if (side.showdownScore != null) {
-                row.put("handRank", side.showdownScore.rank.name());
-                row.put("handScore", side.showdownScore.toString());
-            }
-            if (side.profileName() != null) {
-                row.put("profile", side.profileName());
-            }
-            out.add(row);
+            Map<String,Object> entry=new LinkedHashMap<>();
+            entry.put("user", uid);
+            entry.put("cards", show);
+            entry.put("bet", side.contributed);
+            entry.put("action", side.lastAction);
+            entry.put("actionAmount", side.lastAmount);
+            entry.put("folded", side.folded);
+            entry.put("ai", side.ai);
+            if(side.profileName()!=null) entry.put("profile", side.profileName());
+            out.add(entry);
         }
         return out;
     }
 
     @PostMapping("/start")
-    public Object start(@RequestParam String roomId,
-                        @RequestParam String users,
-                        @RequestParam int ante) {
-        List<String> list = Arrays.stream(users.split(","))
-                .map(String::trim)
-                .filter(u -> !u.isEmpty())
-                .collect(Collectors.toList());
-        SevenPokerGame.State state = stateFor(roomId);
-        game.start(state, list, ante);
+    public Object start(@RequestParam String roomId, @RequestParam String users, @RequestParam int ante){
+        var list = Arrays.asList(users.split(","));
+        var s = st(roomId);
+        game.start(s, list, ante);
         return ApiResponse.of("ok", true).detail(Map.of(
-                "inProgress", state.inProgress,
-                "stage", state.stageName,
-                "round", state.stage,
-                "turn", state.turn
+                "inProgress", s.inProgress,
+                "stage", s.stageName,
+                "round", s.stage,
+                "turn", s.turn
         ));
     }
 
     @GetMapping("/state")
-    public Object state(@RequestParam String roomId, @RequestParam String viewer) {
-        SevenPokerGame.State state = stateFor(roomId);
-        Map<String, Object> detail = new LinkedHashMap<>();
-        detail.put("inProgress", state.inProgress);
-        detail.put("stage", state.stageName);
-        detail.put("round", state.stage);
-        detail.put("turn", state.turn);
-        detail.put("ante", state.ante);
-        detail.put("pot", state.pot);
-        detail.put("currentBet", state.currentBet);
-        detail.put("minRaise", game.minRaise(state));
-        detail.put("pending", game.pendingOrder(state));
-        detail.put("winners", new ArrayList<>(state.winners));
-        detail.put("payouts", new LinkedHashMap<>(state.payouts));
-        detail.put("settledPot", state.settledPot);
-        detail.put("players", maskFor(viewer, state));
-        return ApiResponse.of("ok", true).detail(detail);
-    }
-
-    @PostMapping("/bet")
-    public Object bet(@RequestParam String roomId,
-                      @RequestParam String user,
-                      @RequestParam int amount) {
-        SevenPokerGame.State state = stateFor(roomId);
-        game.bet(state, user, amount);
-        return ApiResponse.of("ok", true).detail(Map.of(
-                "pot", state.pot,
-                "currentBet", state.currentBet,
-                "turn", state.turn
-        ));
+    public Object state(@RequestParam String roomId, @RequestParam String viewer){
+        var s = st(roomId);
+        Map<String,Object> d=new LinkedHashMap<>();
+        d.put("inProgress", s.inProgress);
+        d.put("stage", s.stageName);
+        d.put("round", s.stage);
+        d.put("turn", s.turn);
+        d.put("ante", s.ante);
+        d.put("pot", s.pot);
+        d.put("players", maskFor(viewer, s.players));
+        return ApiResponse.of("ok", true).detail(d);
     }
 
     @PostMapping("/call")
