@@ -30,12 +30,25 @@ public class BlackjackController {
         var g=solos.get(user); var st=g.stand(); return wrap(user, st, st.inProgress?0:st.delta);
     }
     @PostMapping("/solo/double") public Object dbl(@RequestParam String user){
-        var g=solos.get(user); var st=g.dbl(); return wrap(user, st, st.inProgress?0:st.delta);
+        var g=solos.get(user);
+        int stake = g!=null ? g.currentBet() : 0;
+        var st=g.dbl();
+        if(stake>0){
+            SessionStore.add(user, -stake);
+        }
+        return wrap(user, st, st.inProgress?0:st.delta);
     }
     @PostMapping("/solo/surrender") public Object sur(@RequestParam String user){
         var g=solos.get(user); var st=g.surrender(); return wrap(user, st, st.inProgress?0:st.delta);
     }
     @PostMapping("/solo/split") public Object split(@RequestParam String user){
-        var g=solos.get(user); var st=g.split(); return wrap(user, st, 0);
+        var g=solos.get(user);
+        int beforeHands = g!=null ? g.handCount() : 0;
+        int stake = g!=null ? g.currentBet() : 0;
+        var st=g.split();
+        if(st.playerHands.size()>beforeHands && stake>0){
+            SessionStore.add(user, -stake);
+        }
+        return wrap(user, st, 0);
     }
 }

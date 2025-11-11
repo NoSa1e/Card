@@ -60,6 +60,8 @@ public class SevenPokerGame {
         public final Map<String, HandScore> showdownScores = new LinkedHashMap<>();
         public final List<String> winners = new ArrayList<>();
         public int settledPot;
+        public final Set<String> settledBalances = new HashSet<>();
+        public final Map<String, Integer> lastBalanceChanges = new LinkedHashMap<>();
     }
 
     private enum ActionType { NONE, BET, RAISE, CALL, CHECK, FOLD, WIN, LOSE }
@@ -191,6 +193,8 @@ public class SevenPokerGame {
         s.showdownScores.clear();
         s.winners.clear();
         s.settledPot = 0;
+        s.settledBalances.clear();
+        s.lastBalanceChanges.clear();
 
         for (String raw : users) {
             String u = raw == null ? "" : raw.trim();

@@ -17,6 +17,16 @@
         <span class="label">포트</span>
         <strong>{{ pot.toLocaleString() }}</strong>
       </div>
+      <div class="balance-info">
+        <span class="label">잔액</span>
+        <strong>{{ balanceDisplay }}</strong>
+        <span
+          v-if="balanceDeltaValue !== 0"
+          :class="['balance-change', balanceDeltaValue > 0 ? 'positive' : 'negative']"
+        >
+          {{ formatSigned(balanceDeltaValue) }}
+        </span>
+      </div>
       <div>
         <span class="label">현재 턴</span>
         <strong>{{ turnUser || '-' }}</strong>
@@ -38,13 +48,15 @@
         </div>
         <div class="bet-input">
           <input v-model.number="ante" type="number" min="10" step="10" />
-          <button class="primary" :disabled="loading || (!isHost && mode==='multi')" @click="start">게임 시작</button>
+          <button class="primary" :disabled="loading || (!isHost && mode==='multi') || !canCoverAnte" @click="start">게임 시작</button>
         </div>
         <ChipTray
           class="bet-chips"
           v-model="ante"
           :min="10"
+          :max="anteMax"
           :disabled="loading || (!isHost && mode==='multi')"
+          :balance="currentBalance"
           :denominations="[10, 50, 100, 500, 1000]"
         />
       </div>
@@ -96,6 +108,13 @@
           <div class="action-status" :class="(side.action || '').toLowerCase()">
             {{ actionDisplay(side) }}
           </div>
+          <div
+            v-if="Number(side.balanceDelta)"
+            class="balance-delta"
+            :class="{ positive: Number(side.balanceDelta) > 0, negative: Number(side.balanceDelta) < 0 }"
+          >
+            잔액 변화: {{ formatSigned(side.balanceDelta) }}
+          </div>
           <div v-if="side.handRank" class="hand-rank">족보: {{ handRankLabel(side.handRank) }}</div>
           <div v-if="Number(side.payout)" class="hand-rank">획득: {{ formatChips(side.payout) }}</div>
         </div>
@@ -103,8 +122,10 @@
           <ChipTray
             v-model="betAmount"
             :min="betMinimum"
+            :max="betMax"
             :denominations="[10, 50, 100, 500, 1000]"
             :disabled="loading"
+            :balance="currentBalance"
           />
         </div>
         <div class="player-actions">
@@ -146,6 +167,8 @@ const minRaise = ref(10)
 const pendingOrder = ref([])
 const winners = ref([])
 const settledPot = ref(0)
+const balance = ref(null)
+const balanceDelta = ref(0)
 
 const user = computed(() => props.user)
 const mode = computed(() => props.mode)
@@ -159,10 +182,35 @@ const isHost = computed(() => {
 })
 
 const players = computed(() => playersState.value)
-const betAmountDisplay = computed(() => Math.max(betMinimum.value, Math.round(betAmount.value || 0)).toLocaleString())
-const betAmountValue = computed(() => Math.max(betMinimum.value, Math.round(betAmount.value || 0)))
+const currentBalance = computed(() => typeof balance.value === 'number' ? balance.value : undefined)
+const balanceDisplay = computed(() => currentBalance.value !== undefined ? currentBalance.value.toLocaleString() : '-')
+const balanceDeltaValue = computed(() => Number(balanceDelta.value) || 0)
+const betMinimum = computed(() => {
+  const base = Math.max(minRaise.value || 10, 10)
+  if(currentBalance.value !== undefined){
+    return Math.max(0, Math.min(base, currentBalance.value))
+  }
+  return base
+})
+const betAmountValue = computed(() => {
+  let next = Math.round(betAmount.value || 0)
+  next = Math.max(next, betMinimum.value)
+  if(currentBalance.value !== undefined){
+    next = Math.min(next, currentBalance.value)
+  }
+  return next
+})
+const betAmountDisplay = computed(() => betAmountValue.value.toLocaleString())
 const turnUser = computed(() => turn.value)
-const betMinimum = computed(() => Math.max(minRaise.value || 10, 10))
+const betMax = computed(() => currentBalance.value ?? Number.POSITIVE_INFINITY)
+const anteMax = computed(() => currentBalance.value ?? Number.POSITIVE_INFINITY)
+const canCoverAnte = computed(() => {
+  const required = Math.max(10, Math.round(ante.value || 0))
+  if(currentBalance.value === undefined){
+    return true
+  }
+  return currentBalance.value >= required
+})
 
 const callLabel = (side) => {
   const amount = Number(side?.toCall || 0)
@@ -176,22 +224,44 @@ const betButtonLabel = (side) => {
   return `레이즈 +${betAmountDisplay.value}`
 }
 
-watch(ante, (value) => {
-  if(value < 10){
-    ante.value = 10
+function clampAnteValue(value){
+  let next = Math.round(value || 0)
+  next = Math.max(next, 10)
+  if(currentBalance.value !== undefined){
+    next = Math.min(next, Math.max(currentBalance.value, 10))
   }
-})
+  return next
+}
+
+function clampBetValue(value){
+  let next = Math.round(value || 0)
+  next = Math.max(next, betMinimum.value)
+  if(currentBalance.value !== undefined){
+    next = Math.min(next, currentBalance.value)
+  }
+  return next
+}
+
+watch(ante, (value) => {
+  const next = clampAnteValue(value)
+  if(next !== value){
+    ante.value = next
+  }
+}, { immediate: true })
 
 watch(betAmount, (value) => {
-  if(value < betMinimum.value){
-    betAmount.value = betMinimum.value
+  const next = clampBetValue(value)
+  if(next !== value){
+    betAmount.value = next
   }
+}, { immediate: true })
+
+watch([minRaise, currentBalance], () => {
+  betAmount.value = clampBetValue(betAmount.value)
 })
 
-watch(minRaise, (value) => {
-  if(betAmount.value < value){
-    betAmount.value = value
-  }
+watch(currentBalance, () => {
+  ante.value = clampAnteValue(ante.value)
 })
 
 onMounted(() => {
@@ -202,6 +272,7 @@ onMounted(() => {
 
 async function start(){
   if(!roomId.value || !user.value) return
+  if(!canCoverAnte.value) return
   loading.value = true
   try{
     const list = mode.value === 'solo'
@@ -239,7 +310,21 @@ async function refresh(){
     pendingOrder.value = detail.pending || []
     winners.value = detail.winners || []
     settledPot.value = detail.settledPot || 0
-    playersState.value = detail.players || []
+    if(typeof detail.balance === 'number'){
+      balance.value = detail.balance
+    } else if(detail.balance === null){
+      balance.value = null
+    }
+    if(typeof detail.balanceDelta === 'number'){
+      balanceDelta.value = detail.balanceDelta
+    } else {
+      balanceDelta.value = 0
+    }
+    const list = Array.isArray(detail.players) ? detail.players.map((player) => ({
+      ...player,
+      balanceDelta: Number(player.balanceDelta) || 0
+    })) : []
+    playersState.value = list
   }catch(err){
     console.error(err)
   }finally{
@@ -263,7 +348,14 @@ async function action(path, extra={}){
     const params = new URLSearchParams({ roomId: roomId.value })
     if(extra.user){ params.set('user', extra.user) }
     if(extra.amount){ params.set('amount', String(extra.amount)) }
-    await jpost(`${path}?${params.toString()}`)
+    const res = await jpost(`${path}?${params.toString()}`)
+    const detail = (res && res.detail) ? res.detail : res
+    if(detail && typeof detail.balance === 'number'){
+      balance.value = detail.balance
+    }
+    if(detail && typeof detail.balanceDelta === 'number'){
+      balanceDelta.value = detail.balanceDelta
+    }
     await refresh()
   }catch(err){
     console.error(err)
@@ -280,6 +372,13 @@ function findSide(uid){
 function formatChips(value){
   const num = Number(value) || 0
   return Math.max(0, Math.round(num)).toLocaleString()
+}
+
+function formatSigned(value){
+  const num = Math.round(Number(value) || 0)
+  if(num === 0) return '0'
+  const sign = num > 0 ? '+' : '-'
+  return `${sign}${Math.abs(num).toLocaleString()}`
 }
 
 function handRankLabel(rank){
@@ -318,7 +417,10 @@ function canAct(side){
 
 function canCall(side){
   if(!canAct(side)) return false
-  return Number(side?.toCall || 0) > 0
+  const amount = Number(side?.toCall || 0)
+  if(amount <= 0) return false
+  if(currentBalance.value !== undefined && amount > currentBalance.value) return false
+  return true
 }
 
 function canCheck(side){
@@ -328,13 +430,18 @@ function canCheck(side){
 
 function canRaise(side){
   if(!canAct(side)) return false
-  return betAmountValue.value >= betMinimum.value
+  if(currentBalance.value !== undefined && currentBalance.value <= 0) return false
+  return betAmountValue.value > 0 && betAmountValue.value >= betMinimum.value
 }
 </script>
 <style scoped>
 .game-board{ display:flex; flex-direction:column; gap:24px; }
 .info-row{ display:flex; gap:24px; justify-content:space-between; background:rgba(255,255,255,.06); border-radius:16px; padding:18px 24px; flex-wrap:wrap; }
 .info-row div{ min-width:160px; }
+.balance-info{ display:flex; flex-direction:column; gap:4px; }
+.balance-change{ font-size:.85rem; font-weight:600; }
+.balance-change.positive{ color:#6bdc8f; }
+.balance-change.negative{ color:#ff91a3; }
 .label{ display:block; color:rgba(255,255,255,.65); font-size:.85rem; margin-bottom:6px; }
 .controls{ display:flex; flex-direction:column; gap:16px; }
 .bet{ display:flex; flex-direction:column; gap:16px; background:rgba(255,255,255,.06); padding:16px 18px; border-radius:16px; }
@@ -365,6 +472,9 @@ function canRaise(side){
 .action-status.check{ background:rgba(120,200,255,.18); color:#7bcaff; }
 .action-status.fold{ background:rgba(255,136,152,.18); color:#ff91a3; }
 .hand-rank{ font-size:.82rem; color:rgba(255,255,255,.7); }
+.balance-delta{ font-size:.78rem; padding:4px 10px; border-radius:999px; background:rgba(255,255,255,.08); font-weight:600; }
+.balance-delta.positive{ color:#6bdc8f; background:rgba(107,220,143,.18); }
+.balance-delta.negative{ color:#ff91a3; background:rgba(255,145,163,.18); }
 .player-chips{ margin-top:auto; }
 .player-actions{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
 .player-actions button{ padding:10px 14px; border-radius:10px; border:none; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; flex:1 1 30%; min-width:110px; }

@@ -17,6 +17,8 @@ public class BlackjackRoom {
         public int decks;
         public Set<String> finished = new HashSet<>();
         public int deltaTotal;              // 정산 총합(방 입장자 sum)
+        public Map<String,Integer> settle = new LinkedHashMap<>();
+        public boolean settlementApplied;
     }
 
     private final Deck deck;
@@ -37,6 +39,7 @@ public class BlackjackRoom {
     public State start(Collection<String> users, int bet){
         s.inProgress=true; s.bet=bet; s.deltaTotal=0;
         s.hands.clear(); s.finished.clear();
+        s.settle.clear(); s.settlementApplied=false;
         s.dealer = new Hand();
         for(String u: users){
             Hand h = new Hand();
@@ -78,13 +81,20 @@ public class BlackjackRoom {
         }
         // 정산
         int total=0;
-        for(Hand h: s.hands.values()){
-            int d=0;
-            if(h.total>21) d = -s.bet;
-            else if(s.dealer.total>21) d = s.bet;
-            else if(h.total > s.dealer.total) d = s.bet;
-            else if(h.total < s.dealer.total) d = -s.bet;
-            total += d;
+        s.settle.clear();
+        for(var entry: s.hands.entrySet()){
+            String uid = entry.getKey();
+            Hand h = entry.getValue();
+            int returned=0;
+            if(h.total>21){
+                returned = 0;
+            }else if(s.dealer.total>21 || h.total > s.dealer.total){
+                returned = s.bet * 2;
+            }else if(h.total == s.dealer.total){
+                returned = s.bet;
+            }
+            total += returned;
+            s.settle.put(uid, returned);
         }
         s.deltaTotal = total;
         s.inProgress=false;
