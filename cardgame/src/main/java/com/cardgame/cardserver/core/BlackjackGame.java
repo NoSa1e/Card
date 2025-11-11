@@ -17,6 +17,8 @@ public class BlackjackGame {
         return sum;
     }
     private Hand newHand(){ Hand h=new Hand(); s.playerHands.add(h); return h; }
+    public int currentBet(){ return s.bet; }
+    public int handCount(){ return s.playerHands.size(); }
     public State start(int bet){
         s.inProgress=true; s.bet=bet; s.delta=0; s.playerHands.clear(); s.activeIndex=0;
         s.dealer=new Hand();
@@ -49,16 +51,19 @@ public class BlackjackGame {
         if(!all) return;
         while(s.dealer.total<17){ s.dealer.cards.add(deck.draw()); s.dealer.total=bestTotal(s.dealer.cards); }
         s.inProgress=false;
-        int totalDelta=0;
+        int totalReturned=0;
         for(Hand h: s.playerHands){
-            int d=0;
-            if(h.total>21) d = -s.bet;
-            else if(s.dealer.total>21) d = s.bet;
-            else if(h.total> s.dealer.total) d=s.bet;
-            else if(h.total< s.dealer.total) d=-s.bet;
-            totalDelta += d;
+            int returned=0;
+            if(h.total>21){
+                returned = 0;
+            }else if(s.dealer.total>21 || h.total> s.dealer.total){
+                returned = s.bet * 2;
+            }else if(h.total == s.dealer.total){
+                returned = s.bet;
+            }
+            totalReturned += returned;
         }
-        s.delta=totalDelta;
+        s.delta=totalReturned;
     }
     public State hit(){
         if(!s.inProgress) return s;

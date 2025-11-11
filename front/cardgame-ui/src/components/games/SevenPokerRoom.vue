@@ -17,6 +17,28 @@
         <span class="label">포트</span>
         <strong>{{ pot.toLocaleString() }}</strong>
       </div>
+      <div class="balance-info">
+        <span class="label">잔액</span>
+        <strong>{{ balanceDisplay }}</strong>
+        <span
+          v-if="balanceDeltaValue !== 0"
+          :class="['balance-change', balanceDeltaValue > 0 ? 'positive' : 'negative']"
+        >
+          {{ formatSigned(balanceDeltaValue) }}
+        </span>
+      </div>
+      <div>
+        <span class="label">현재 턴</span>
+        <strong>{{ turnUser || '-' }}</strong>
+      </div>
+      <div>
+        <span class="label">현재 베팅</span>
+        <strong>{{ formatChips(currentBet) }}</strong>
+      </div>
+      <div>
+        <span class="label">최소 레이즈</span>
+        <strong>{{ formatChips(minRaise) }}</strong>
+      </div>
     </section>
 
     <section class="controls">
@@ -26,26 +48,43 @@
         </div>
         <div class="bet-input">
           <input v-model.number="ante" type="number" min="10" step="10" />
-          <button class="primary" :disabled="loading || (!isHost && mode==='multi')" @click="start">게임 시작</button>
+          <button class="primary" :disabled="loading || (!isHost && mode==='multi') || !canCoverAnte" @click="start">게임 시작</button>
         </div>
         <ChipTray
           class="bet-chips"
           v-model="ante"
           :min="10"
+          :max="anteMax"
           :disabled="loading || (!isHost && mode==='multi')"
+          :balance="currentBalance"
           :denominations="[10, 50, 100, 500, 1000]"
         />
       </div>
       <div class="actions">
-        <button @click="nextStage" :disabled="loading || (!isHost && mode==='multi')">다음 단계</button>
         <button @click="refresh" :disabled="loading">상태 새로고침</button>
       </div>
     </section>
 
+    <section v-if="inProgress && pendingOrder.length" class="pending">
+      <p>행동 대기: {{ pendingOrder.join(', ') }}</p>
+    </section>
+
+    <section v-if="winners.length" class="showdown">
+      <p>
+        쇼다운 결과: <strong>{{ winners.join(', ') }}</strong>
+        <span v-if="settledPot">(팟 {{ formatChips(settledPot) }})</span>
+      </p>
+    </section>
+
     <section class="players">
-      <article v-for="side in players" :key="side.user" :class="['player', { me: side.user === user }]">
+      <article
+        v-for="side in players"
+        :key="side.user"
+        :class="['player', { me: side.user === user, acting: side.user === turnUser, folded: side.folded, winner: side.winner }]"
+      >
         <header>
           <h4>{{ side.user }}</h4>
+          <small v-if="side.ai" class="profile">{{ side.profile || 'AI' }}</small>
         </header>
         <div class="cards">
           <CardImg
@@ -57,19 +96,45 @@
             :delay="index*40"
           />
         </div>
+        <div class="player-meta">
+          <div class="bet-summary">
+            <span>총 베팅</span>
+            <strong>{{ formatChips(side.bet) }}</strong>
+          </div>
+          <div class="bet-summary" v-if="Number(side.toCall) > 0">
+            <span>콜 필요</span>
+            <strong>{{ formatChips(side.toCall) }}</strong>
+          </div>
+          <div class="action-status" :class="(side.action || '').toLowerCase()">
+            {{ actionDisplay(side) }}
+          </div>
+          <div
+            v-if="Number(side.balanceDelta)"
+            class="balance-delta"
+            :class="{ positive: Number(side.balanceDelta) > 0, negative: Number(side.balanceDelta) < 0 }"
+          >
+            잔액 변화: {{ formatSigned(side.balanceDelta) }}
+          </div>
+          <div v-if="side.handRank" class="hand-rank">족보: {{ handRankLabel(side.handRank) }}</div>
+          <div v-if="Number(side.payout)" class="hand-rank">획득: {{ formatChips(side.payout) }}</div>
+        </div>
         <div v-if="side.user === user" class="player-chips">
           <ChipTray
             v-model="betAmount"
-            :min="10"
+            :min="betMinimum"
+            :max="betMax"
             :denominations="[10, 50, 100, 500, 1000]"
             :disabled="loading"
+            :balance="currentBalance"
           />
         </div>
         <div class="player-actions">
-          <button @click="bet(side.user)" :disabled="loading || side.user !== user">베팅 +{{ betAmountDisplay }}</button>
-          <button @click="check(side.user)" :disabled="loading || side.user !== user">체크</button>
-          <button @click="fold(side.user)" :disabled="loading || side.user !== user">폴드</button>
+          <button @click="bet(side.user)" :disabled="!canRaise(side)">{{ betButtonLabel(side) }}</button>
+          <button @click="call(side.user)" :disabled="!canCall(side)">{{ callLabel(side) }}</button>
+          <button @click="check(side.user)" :disabled="!canCheck(side)">체크</button>
+          <button @click="fold(side.user)" :disabled="!canAct(side)">폴드</button>
         </div>
+        <div v-if="side.folded" class="fold-banner">폴드</div>
       </article>
     </section>
   </div>
@@ -92,8 +157,18 @@ const ante = ref(50)
 const betAmount = ref(50)
 const loading = ref(false)
 const stage = ref('READY')
+const round = ref(0)
 const pot = ref(0)
 const playersState = ref([])
+const inProgress = ref(false)
+const turn = ref(null)
+const currentBet = ref(0)
+const minRaise = ref(10)
+const pendingOrder = ref([])
+const winners = ref([])
+const settledPot = ref(0)
+const balance = ref(null)
+const balanceDelta = ref(0)
 
 const user = computed(() => props.user)
 const mode = computed(() => props.mode)
@@ -107,19 +182,86 @@ const isHost = computed(() => {
 })
 
 const players = computed(() => playersState.value)
-const betAmountDisplay = computed(() => Math.max(10, Math.round(betAmount.value || 0)).toLocaleString())
-const betAmountValue = computed(() => Math.max(10, Math.round(betAmount.value || 0)))
-
-watch(ante, (value) => {
-  if(value < 10){
-    ante.value = 10
+const currentBalance = computed(() => typeof balance.value === 'number' ? balance.value : undefined)
+const balanceDisplay = computed(() => currentBalance.value !== undefined ? currentBalance.value.toLocaleString() : '-')
+const balanceDeltaValue = computed(() => Number(balanceDelta.value) || 0)
+const betMinimum = computed(() => {
+  const base = Math.max(minRaise.value || 10, 10)
+  if(currentBalance.value !== undefined){
+    return Math.max(0, Math.min(base, currentBalance.value))
   }
+  return base
+})
+const betAmountValue = computed(() => {
+  let next = Math.round(betAmount.value || 0)
+  next = Math.max(next, betMinimum.value)
+  if(currentBalance.value !== undefined){
+    next = Math.min(next, currentBalance.value)
+  }
+  return next
+})
+const betAmountDisplay = computed(() => betAmountValue.value.toLocaleString())
+const turnUser = computed(() => turn.value)
+const betMax = computed(() => currentBalance.value ?? Number.POSITIVE_INFINITY)
+const anteMax = computed(() => currentBalance.value ?? Number.POSITIVE_INFINITY)
+const canCoverAnte = computed(() => {
+  const required = Math.max(10, Math.round(ante.value || 0))
+  if(currentBalance.value === undefined){
+    return true
+  }
+  return currentBalance.value >= required
 })
 
-watch(betAmount, (value) => {
-  if(value < 10){
-    betAmount.value = 10
+const callLabel = (side) => {
+  const amount = Number(side?.toCall || 0)
+  return amount > 0 ? `콜 ${formatChips(amount)}` : '콜'
+}
+
+const betButtonLabel = (side) => {
+  if (currentBet.value <= 0) {
+    return `베팅 ${betAmountDisplay.value}`
   }
+  return `레이즈 +${betAmountDisplay.value}`
+}
+
+function clampAnteValue(value){
+  let next = Math.round(value || 0)
+  next = Math.max(next, 10)
+  if(currentBalance.value !== undefined){
+    next = Math.min(next, Math.max(currentBalance.value, 10))
+  }
+  return next
+}
+
+function clampBetValue(value){
+  let next = Math.round(value || 0)
+  next = Math.max(next, betMinimum.value)
+  if(currentBalance.value !== undefined){
+    next = Math.min(next, currentBalance.value)
+  }
+  return next
+}
+
+watch(ante, (value) => {
+  const next = clampAnteValue(value)
+  if(next !== value){
+    ante.value = next
+  }
+}, { immediate: true })
+
+watch(betAmount, (value) => {
+  const next = clampBetValue(value)
+  if(next !== value){
+    betAmount.value = next
+  }
+}, { immediate: true })
+
+watch([minRaise, currentBalance], () => {
+  betAmount.value = clampBetValue(betAmount.value)
+})
+
+watch(currentBalance, () => {
+  ante.value = clampAnteValue(ante.value)
 })
 
 onMounted(() => {
@@ -130,10 +272,11 @@ onMounted(() => {
 
 async function start(){
   if(!roomId.value || !user.value) return
+  if(!canCoverAnte.value) return
   loading.value = true
   try{
     const list = mode.value === 'solo'
-      ? [user.value, `${user.value}_AI1`, `${user.value}_AI2`]
+      ? [user.value, `AI_${user.value}`]
       : (providedPlayers.value.length ? providedPlayers.value : [user.value])
     const params = new URLSearchParams({
       roomId: roomId.value,
@@ -157,8 +300,31 @@ async function refresh(){
     const res = await jget(`/api/seven/state?${params.toString()}`)
     const detail = res.detail || res
     stage.value = detail.stage || 'READY'
+    if(typeof detail.round === 'number'){ round.value = detail.round }
     pot.value = detail.pot || 0
-    playersState.value = detail.players || []
+    inProgress.value = Boolean(detail.inProgress)
+    turn.value = detail.turn || null
+    if(detail.ante){ ante.value = detail.ante }
+    currentBet.value = detail.currentBet || 0
+    minRaise.value = detail.minRaise || Math.max(10, ante.value)
+    pendingOrder.value = detail.pending || []
+    winners.value = detail.winners || []
+    settledPot.value = detail.settledPot || 0
+    if(typeof detail.balance === 'number'){
+      balance.value = detail.balance
+    } else if(detail.balance === null){
+      balance.value = null
+    }
+    if(typeof detail.balanceDelta === 'number'){
+      balanceDelta.value = detail.balanceDelta
+    } else {
+      balanceDelta.value = 0
+    }
+    const list = Array.isArray(detail.players) ? detail.players.map((player) => ({
+      ...player,
+      balanceDelta: Number(player.balanceDelta) || 0
+    })) : []
+    playersState.value = list
   }catch(err){
     console.error(err)
   }finally{
@@ -167,18 +333,29 @@ async function refresh(){
 }
 
 async function bet(target){ await action('/api/seven/bet', { user: target, amount: betAmountValue.value }) }
+async function call(target){ await action('/api/seven/call', { user: target }) }
 async function check(target){ await action('/api/seven/check', { user: target }) }
 async function fold(target){ await action('/api/seven/fold', { user: target }) }
-async function nextStage(){ await action('/api/seven/next') }
 
 async function action(path, extra={}){
   if(!roomId.value) return
+  if(extra.user){
+    const target = findSide(extra.user)
+    if(!canAct(target)) return
+  }
   loading.value = true
   try{
     const params = new URLSearchParams({ roomId: roomId.value })
     if(extra.user){ params.set('user', extra.user) }
     if(extra.amount){ params.set('amount', String(extra.amount)) }
-    await jpost(`${path}?${params.toString()}`)
+    const res = await jpost(`${path}?${params.toString()}`)
+    const detail = (res && res.detail) ? res.detail : res
+    if(detail && typeof detail.balance === 'number'){
+      balance.value = detail.balance
+    }
+    if(detail && typeof detail.balanceDelta === 'number'){
+      balanceDelta.value = detail.balanceDelta
+    }
     await refresh()
   }catch(err){
     console.error(err)
@@ -186,11 +363,85 @@ async function action(path, extra={}){
     loading.value = false
   }
 }
+
+function findSide(uid){
+  if(!uid) return null
+  return players.value.find(p => p.user === uid) || null
+}
+
+function formatChips(value){
+  const num = Number(value) || 0
+  return Math.max(0, Math.round(num)).toLocaleString()
+}
+
+function formatSigned(value){
+  const num = Math.round(Number(value) || 0)
+  if(num === 0) return '0'
+  const sign = num > 0 ? '+' : '-'
+  return `${sign}${Math.abs(num).toLocaleString()}`
+}
+
+function handRankLabel(rank){
+  if(!rank) return ''
+  return String(rank).replace(/_/g, ' ')
+}
+
+function actionDisplay(side){
+  if(!side) return '대기 중'
+  const type = side.action
+  if(type === 'BET'){
+    return `베팅 +${formatChips(side.actionAmount)}`
+  }
+  if(type === 'RAISE'){
+    return `레이즈 +${formatChips(side.actionAmount)}`
+  }
+  if(type === 'CALL'){
+    return `콜 ${formatChips(side.actionAmount)}`
+  }
+  if(type === 'CHECK') return '체크'
+  if(type === 'FOLD') return '폴드'
+  if(type === 'WIN') return `승리 +${formatChips(side.actionAmount)}`
+  if(type === 'LOSE') return '패배'
+  if(type === 'ANTE') return `앤티 ${formatChips(side.actionAmount)}`
+  return '대기 중'
+}
+
+function canAct(side){
+  if(!side) return false
+  if(side.user !== user.value) return false
+  if(side.folded) return false
+  if(!inProgress.value) return false
+  if(turn.value && turn.value !== side.user) return false
+  return !loading.value
+}
+
+function canCall(side){
+  if(!canAct(side)) return false
+  const amount = Number(side?.toCall || 0)
+  if(amount <= 0) return false
+  if(currentBalance.value !== undefined && amount > currentBalance.value) return false
+  return true
+}
+
+function canCheck(side){
+  if(!canAct(side)) return false
+  return Number(side?.toCall || 0) <= 0
+}
+
+function canRaise(side){
+  if(!canAct(side)) return false
+  if(currentBalance.value !== undefined && currentBalance.value <= 0) return false
+  return betAmountValue.value > 0 && betAmountValue.value >= betMinimum.value
+}
 </script>
 <style scoped>
 .game-board{ display:flex; flex-direction:column; gap:24px; }
 .info-row{ display:flex; gap:24px; justify-content:space-between; background:rgba(255,255,255,.06); border-radius:16px; padding:18px 24px; flex-wrap:wrap; }
 .info-row div{ min-width:160px; }
+.balance-info{ display:flex; flex-direction:column; gap:4px; }
+.balance-change{ font-size:.85rem; font-weight:600; }
+.balance-change.positive{ color:#6bdc8f; }
+.balance-change.negative{ color:#ff91a3; }
 .label{ display:block; color:rgba(255,255,255,.65); font-size:.85rem; margin-bottom:6px; }
 .controls{ display:flex; flex-direction:column; gap:16px; }
 .bet{ display:flex; flex-direction:column; gap:16px; background:rgba(255,255,255,.06); padding:16px 18px; border-radius:16px; }
@@ -203,12 +454,35 @@ async function action(path, extra={}){
 .actions{ display:flex; gap:12px; flex-wrap:wrap; }
 .actions button{ padding:12px 18px; border-radius:12px; border:none; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; }
 .actions button:disabled{ opacity:.5; cursor:not-allowed; }
-.players{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:18px; }
-.player{ background:rgba(8,14,24,.75); border-radius:18px; padding:18px; border:1px solid rgba(255,255,255,.08); display:flex; flex-direction:column; gap:12px; }
-.player.me{ border-color:#5d9cff; box-shadow:0 0 0 3px rgba(93,156,255,.3); }
+.players{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px; }
+.player{ background:rgba(8,14,24,.75); border-radius:18px; padding:20px; border:1px solid rgba(255,255,255,.08); display:flex; flex-direction:column; gap:14px; position:relative; overflow:hidden; transition:border-color .2s ease, box-shadow .2s ease; }
+.player.me{ border-color:#5d9cff; box-shadow:0 0 0 3px rgba(93,156,255,.28); }
+.player.acting{ border-color:rgba(255,214,120,.8); box-shadow:0 0 0 3px rgba(255,214,120,.25); }
+.player.folded{ opacity:.55; }
+.player.winner{ border-color:#6bdc8f; box-shadow:0 0 0 3px rgba(107,220,143,.3); }
+.player header{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.player .profile{ padding:4px 10px; border-radius:999px; background:rgba(255,255,255,.1); color:rgba(255,255,255,.75); font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
 .cards{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
-.player-chips{ margin-top:8px; }
+.player-meta{ display:flex; gap:18px; align-items:center; flex-wrap:wrap; justify-content:space-between; }
+.bet-summary{ display:flex; flex-direction:column; gap:4px; font-size:.85rem; }
+.bet-summary span{ color:rgba(255,255,255,.65); }
+.bet-summary strong{ font-size:1.15rem; color:#ffd36b; }
+.action-status{ padding:6px 14px; border-radius:999px; background:rgba(255,255,255,.08); font-size:.85rem; letter-spacing:.04em; text-transform:uppercase; }
+.action-status.bet{ background:rgba(255,186,120,.18); color:#ffb87b; }
+.action-status.check{ background:rgba(120,200,255,.18); color:#7bcaff; }
+.action-status.fold{ background:rgba(255,136,152,.18); color:#ff91a3; }
+.hand-rank{ font-size:.82rem; color:rgba(255,255,255,.7); }
+.balance-delta{ font-size:.78rem; padding:4px 10px; border-radius:999px; background:rgba(255,255,255,.08); font-weight:600; }
+.balance-delta.positive{ color:#6bdc8f; background:rgba(107,220,143,.18); }
+.balance-delta.negative{ color:#ff91a3; background:rgba(255,145,163,.18); }
+.player-chips{ margin-top:auto; }
 .player-actions{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
-.player-actions button{ padding:10px 14px; border-radius:10px; border:none; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; }
+.player-actions button{ padding:10px 14px; border-radius:10px; border:none; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; flex:1 1 30%; min-width:110px; }
+.player-actions button:disabled{ opacity:.5; cursor:not-allowed; }
+.fold-banner{ position:absolute; right:16px; bottom:16px; padding:6px 12px; border-radius:999px; background:rgba(255,136,152,.2); color:#ff91a3; font-size:.8rem; font-weight:600; }
+.pending{ background:rgba(255,255,255,.05); border-radius:14px; padding:12px 18px; }
+.pending p{ margin:0; color:rgba(255,255,255,.75); font-size:.9rem; }
+.showdown{ background:rgba(255,255,255,.08); border-radius:14px; padding:16px 20px; }
+.showdown p{ margin:0; font-size:1rem; color:#ffd36b; }
 .empty{ color:rgba(255,255,255,.6); text-align:center; padding:40px 0; }
 </style>

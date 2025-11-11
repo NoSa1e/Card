@@ -9,6 +9,7 @@ public class BaccaratRoom {
         public Side player=new Side(); public Side banker=new Side();
         public Map<String, Map<String,Integer>> ledger = new LinkedHashMap<>(); // user -> {MAIN:amount, PP:0/amount, BP:..., S6:...}
         public Map<String,Integer> settle = new LinkedHashMap<>(); // user -> delta
+        public boolean settlementApplied;
     }
     private final Deck deck;
     public final Round r = new Round();
@@ -16,6 +17,15 @@ public class BaccaratRoom {
     public BaccaratRoom(int decks){ this.deck = new Deck(Math.max(1,decks)); }
 
     private static int point(List<Card> cs){ int t=0; for(Card c: cs) t+=c.pip(); return t%10; }
+
+    public void resetRound(){
+        r.inProgress = false;
+        r.player = new Side();
+        r.banker = new Side();
+        r.settle.clear();
+        r.ledger.clear();
+        r.settlementApplied = false;
+    }
 
     public void place(String user, String main, int amount, boolean pp, boolean bp, boolean s6){
         r.ledger.putIfAbsent(user, new LinkedHashMap<>());
@@ -26,8 +36,28 @@ public class BaccaratRoom {
         if(s6) m.put("SUPER6", m.getOrDefault("SUPER6",0)+amount);
     }
 
+    private static int settleMain(String pick, String winner, int amount, boolean commission){
+        if("PLAYER".equals(pick)){
+            if("PLAYER".equals(winner)) return amount * 2;
+            if("TIE".equals(winner)) return amount;
+            return 0;
+        }
+        if("BANKER".equals(pick)){
+            if("BANKER".equals(winner)){
+                int profit = commission ? (int)Math.round(amount * 0.95) : amount;
+                return amount + profit;
+            }
+            if("TIE".equals(winner)) return amount;
+            return 0;
+        }
+        if("TIE".equals(pick)){
+            return "TIE".equals(winner) ? amount * 9 : 0;
+        }
+        return 0;
+    }
+
     public void dealAndSettle(boolean commission){
-        r.inProgress = true; r.player = new Side(); r.banker = new Side(); r.settle.clear();
+        r.inProgress = true; r.player = new Side(); r.banker = new Side(); r.settle.clear(); r.settlementApplied = false;
         r.player.cards.add(deck.draw()); r.banker.cards.add(deck.draw());
         r.player.cards.add(deck.draw()); r.banker.cards.add(deck.draw());
         r.player.total = point(r.player.cards); r.banker.total = point(r.banker.cards);
@@ -44,17 +74,28 @@ public class BaccaratRoom {
                 String k=b.getKey(); int amt=b.getValue();
                 if(k.startsWith("MAIN_")){
                     String pick = k.substring("MAIN_".length());
-                    if("PLAYER".equals(pick)) delta += ("PLAYER".equals(winner)? amt : -amt);
-                    else if("BANKER".equals(pick)){
-                        if("BANKER".equals(winner)) delta += commission ? (int)Math.round(amt*0.95) : amt;
-                        else delta -= amt;
-                    } else if("TIE".equals(pick)) delta += ("TIE".equals(winner)? amt*8 : -amt);
-                }else if("PAIR_P".equals(k) && pPair){ delta += amt*11; }
-                else if("PAIR_B".equals(k) && bPair){ delta += amt*11; }
-                else if("SUPER6".equals(k) && "BANKER".equals(winner) && r.banker.total==6){ delta += amt*12; }
+                    delta += settleMain(pick, winner, amt, commission);
+                }else if("PAIR_P".equals(k) && pPair){ delta += amt*12; }
+                else if("PAIR_B".equals(k) && bPair){ delta += amt*12; }
+                else if("SUPER6".equals(k) && "BANKER".equals(winner) && r.banker.total==6){ delta += amt*13; }
             }
             r.settle.put(user, delta);
         }
         r.inProgress=false;
+    }
+
+    public boolean ready(Collection<String> users){
+        if(users==null || users.isEmpty()) return false;
+        for(String user: users){
+            if(user==null) continue;
+            var m = r.ledger.get(user);
+            if(m==null || m.isEmpty()) return false;
+            boolean hasMain=false;
+            for(var e: m.entrySet()){
+                if(e.getKey().startsWith("MAIN_") && e.getValue()>0){ hasMain=true; break; }
+            }
+            if(!hasMain) return false;
+        }
+        return true;
     }
 }

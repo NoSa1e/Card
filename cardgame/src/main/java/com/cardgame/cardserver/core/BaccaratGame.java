@@ -18,20 +18,33 @@ public class BaccaratGame {
         int settle=0;
         if(main!=null){
             switch(main.toUpperCase()){
-                case "PLAYER" -> settle += ( "PLAYER".equals(winner) ? amount : -amount );
+                case "PLAYER" -> {
+                    if("PLAYER".equals(winner)){
+                        settle += amount * 2;
+                    }else if("TIE".equals(winner)){
+                        settle += amount;
+                    }
+                }
                 case "BANKER" -> {
                     if("BANKER".equals(winner)){
-                        settle += commission ? (int)Math.round(amount*0.95) : amount;
-                    } else settle -= amount;
+                        int profit = commission ? (int)Math.round(amount*0.95) : amount;
+                        settle += amount + profit;
+                    }else if("TIE".equals(winner)){
+                        settle += amount;
+                    }
                 }
-                case "TIE" -> settle += ("TIE".equals(winner)? amount*8 : -amount);
+                case "TIE" -> {
+                    if("TIE".equals(winner)){
+                        settle += amount * 9;
+                    }
+                }
             }
         }
         boolean pPair = s.player.cards.size()>=2 && s.player.cards.get(0).rank()==s.player.cards.get(1).rank();
         boolean bPair = s.banker.cards.size()>=2 && s.banker.cards.get(0).rank()==s.banker.cards.get(1).rank();
-        if(pp && pPair) settle += amount*11;
-        if(pb && bPair) settle += amount*11;
-        if(super6 && "BANKER".equals(winner) && s.banker.total==6) settle += amount*12;
+        if(pp && pPair) settle += amount*12;
+        if(pb && bPair) settle += amount*12;
+        if(super6 && "BANKER".equals(winner) && s.banker.total==6) settle += amount*13;
         s.delta=settle; return s;
     }
 }

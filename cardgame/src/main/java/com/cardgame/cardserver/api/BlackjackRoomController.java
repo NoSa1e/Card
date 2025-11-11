@@ -16,6 +16,19 @@ public class BlackjackRoomController {
         return rooms.computeIfAbsent(roomId, k -> new BlackjackRoom(decks));
     }
 
+    private Map<String,Integer> applySettlement(BlackjackRoom room){
+        BlackjackRoom.State st = room.s;
+        if(st.settlementApplied){
+            return Collections.emptyMap();
+        }
+        Map<String,Integer> balances = new LinkedHashMap<>();
+        for(var entry: st.settle.entrySet()){
+            balances.put(entry.getKey(), SessionStore.add(entry.getKey(), entry.getValue()));
+        }
+        st.settlementApplied = true;
+        return balances;
+    }
+
     private static Map<String,Object> dto(Card c){ return Map.of("rank", c.rankStr(), "suit", c.suitStr()); }
 
     private static List<Map<String,Object>> maskHands(String me, Map<String, BlackjackRoom.Hand> all, boolean inProgress){
@@ -43,6 +56,10 @@ public class BlackjackRoomController {
         var game = getOrCreate(roomId, decks);
         var users = new ArrayList<>(r.players);
         var st = game.start(users, bet);
+        Map<String,Integer> balances = new LinkedHashMap<>();
+        for(String uid: users){
+            balances.put(uid, SessionStore.add(uid, -bet));
+        }
         return ApiResponse.of("ok", true).detail(Map.of(
                 "inProgress", st.inProgress,
                 "bet", st.bet,
@@ -50,7 +67,8 @@ public class BlackjackRoomController {
                         "cards", List.of(dto(st.dealer.cards.get(0)), Map.of("rank","BACK","suit","")),
                         "total", null
                 ),
-                "hands", maskHands(host, st.hands, true)
+                "hands", maskHands(host, st.hands, true),
+                "balances", balances
         ));
     }
 
@@ -71,7 +89,9 @@ public class BlackjackRoomController {
                 "bet", st.bet,
                 "dealer", Map.of("cards", dealerCards, "total", st.inProgress?null:st.dealer.total),
                 "hands", maskHands(viewer, st.hands, st.inProgress),
-                "deltaTotal", st.deltaTotal
+                "deltaTotal", st.deltaTotal,
+                "settle", new LinkedHashMap<>(st.settle),
+                "settled", st.settlementApplied
         ));
     }
 
@@ -80,7 +100,14 @@ public class BlackjackRoomController {
         var g = rooms.get(roomId);
         if(g==null) return ApiResponse.of("ok", false).detail("no game");
         var st = g.hit(user);
-        return ApiResponse.of("ok", true).detail(Map.of("inProgress", st.inProgress));
+        Map<String,Object> detail = new LinkedHashMap<>();
+        detail.put("inProgress", st.inProgress);
+        if(!st.inProgress){
+            detail.put("settle", new LinkedHashMap<>(st.settle));
+            Map<String,Integer> balances = applySettlement(g);
+            if(!balances.isEmpty()) detail.put("balances", balances);
+        }
+        return ApiResponse.of("ok", true).detail(detail);
     }
 
     @PostMapping("/stand")
@@ -88,6 +115,13 @@ public class BlackjackRoomController {
         var g = rooms.get(roomId);
         if(g==null) return ApiResponse.of("ok", false).detail("no game");
         var st = g.stand(user);
-        return ApiResponse.of("ok", true).detail(Map.of("inProgress", st.inProgress));
+        Map<String,Object> detail = new LinkedHashMap<>();
+        detail.put("inProgress", st.inProgress);
+        if(!st.inProgress){
+            detail.put("settle", new LinkedHashMap<>(st.settle));
+            Map<String,Integer> balances = applySettlement(g);
+            if(!balances.isEmpty()) detail.put("balances", balances);
+        }
+        return ApiResponse.of("ok", true).detail(detail);
     }
 }

@@ -17,7 +17,11 @@ public class BaccaratController {
                       @RequestParam(defaultValue="false") boolean super6,
                       @RequestParam(defaultValue="true") boolean commission,
                       @RequestParam(defaultValue="6") int decks){
-        SessionStore.add(user, -amount);
+        int stake = amount;
+        if(pairPlayer) stake += amount;
+        if(pairBanker) stake += amount;
+        if(super6) stake += amount;
+        SessionStore.add(user, -stake);
         var st = solo(user,decks).bet(main, pairPlayer, pairBanker, super6, amount, commission);
         int newBal = SessionStore.add(user, st.delta);
         Map<String,Object> d = new LinkedHashMap<>();
